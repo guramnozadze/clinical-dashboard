@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.exc import IntegrityError
 
 from app.crud import participant as crud
 from app.database import DbSession
@@ -16,7 +17,14 @@ router = APIRouter(
 
 @router.post("", response_model=ParticipantRead, status_code=status.HTTP_201_CREATED)
 def create_participant(payload: ParticipantCreate, db: DbSession) -> ParticipantRead:
-    return crud.create_participant(db, payload)
+    try:
+        return crud.create_participant(db, payload)
+    except IntegrityError:
+        # The only unique constraint on participants is subject_id.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Participant with subject_id {payload.subject_id!r} already exists",
+        )
 
 
 @router.get("", response_model=list[ParticipantRead])
