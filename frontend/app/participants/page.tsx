@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { AppHeader } from "@/components/AppHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -25,6 +27,12 @@ export default function ParticipantsPage() {
                 : "Trial participant roster"}
             </p>
           </div>
+          <Link
+            href="/participants/new"
+            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            Add participant
+          </Link>
         </div>
 
         {isPending ? (
