@@ -5,7 +5,11 @@ from sqlalchemy.exc import IntegrityError
 
 from app.crud import participant as crud
 from app.database import DbSession
-from app.schemas.participant import ParticipantCreate, ParticipantRead
+from app.schemas.participant import (
+    ParticipantCreate,
+    ParticipantRead,
+    ParticipantUpdate,
+)
 from app.security import get_current_user
 
 router = APIRouter(
@@ -45,3 +49,27 @@ def get_participant(participant_id: uuid.UUID, db: DbSession) -> ParticipantRead
             detail=f"Participant {participant_id} not found",
         )
     return participant
+
+
+@router.put("/{participant_id}", response_model=ParticipantRead)
+def update_participant(
+    participant_id: uuid.UUID, payload: ParticipantUpdate, db: DbSession
+) -> ParticipantRead:
+    participant = crud.get_participant(db, participant_id)
+    if participant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Participant {participant_id} not found",
+        )
+    return crud.update_participant(db, participant, payload)
+
+
+@router.delete("/{participant_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_participant(participant_id: uuid.UUID, db: DbSession) -> None:
+    participant = crud.get_participant(db, participant_id)
+    if participant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Participant {participant_id} not found",
+        )
+    crud.soft_delete_participant(db, participant)

@@ -23,3 +23,6 @@ export interface Participant {
 
 /** Payload for POST /participants; the server generates participant_id. */
 export type ParticipantCreate = Omit<Participant, "participant_id">;
+
+/** Payload for PUT /participants/{id}; subject_id is immutable (ADR 0011). */
+export type ParticipantUpdate = Omit<ParticipantCreate, "subject_id">;

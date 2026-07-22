@@ -46,6 +46,9 @@ function Field({ label, name, error, children }: FieldProps) {
 }
 
 interface ParticipantFormProps {
+  /** "edit" locks subject_id (immutable per ADR 0011) and relabels submit. */
+  mode?: "create" | "edit";
+  initialValues?: ParticipantFormValues;
   onSubmit: (data: ParticipantCreate) => void;
   isSubmitting: boolean;
   /** Error returned by the backend (e.g. duplicate subject_id), if any. */
@@ -54,12 +57,16 @@ interface ParticipantFormProps {
 }
 
 export function ParticipantForm({
+  mode = "create",
+  initialValues,
   onSubmit,
   isSubmitting,
   serverError,
   onCancel,
 }: ParticipantFormProps) {
-  const [values, setValues] = useState<ParticipantFormValues>(EMPTY_FORM);
+  const [values, setValues] = useState<ParticipantFormValues>(
+    initialValues ?? EMPTY_FORM,
+  );
   const [errors, setErrors] = useState<ParticipantFormErrors>({});
 
   function setField(name: keyof ParticipantFormValues, value: string) {
@@ -94,9 +101,22 @@ export function ParticipantForm({
         <input
           type="text"
           placeholder="SUBJ-004"
-          className={INPUT_CLASSES}
+          disabled={mode === "edit"}
+          className={`${INPUT_CLASSES} disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500 dark:disabled:bg-zinc-800`}
           {...fieldProps("subject_id")}
+          aria-describedby={
+            errors.subject_id
+              ? "subject_id-error"
+              : mode === "edit"
+                ? "subject_id-hint"
+                : undefined
+          }
         />
+        {mode === "edit" && (
+          <p id="subject_id-hint" className="mt-1 text-xs text-zinc-500">
+            Subject IDs cannot be changed after enrollment.
+          </p>
+        )}
       </Field>
 
       <div className="grid grid-cols-2 gap-4">
@@ -175,7 +195,11 @@ export function ParticipantForm({
           disabled={isSubmitting}
           className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
         >
-          {isSubmitting ? "Saving…" : "Add participant"}
+          {isSubmitting
+            ? "Saving…"
+            : mode === "edit"
+              ? "Save changes"
+              : "Add participant"}
         </button>
         <button
           type="button"

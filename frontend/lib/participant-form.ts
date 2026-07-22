@@ -3,6 +3,7 @@ import {
   PARTICIPANT_STATUSES,
   STUDY_GROUPS,
   type Gender,
+  type Participant,
   type ParticipantCreate,
   type ParticipantStatus,
   type StudyGroup,
@@ -38,6 +39,20 @@ export const EMPTY_FORM: ParticipantFormValues = {
   age: "",
   gender: "",
 };
+
+/** Initial form values for editing an existing participant. */
+export function participantToFormValues(
+  participant: Participant,
+): ParticipantFormValues {
+  return {
+    subject_id: participant.subject_id,
+    study_group: participant.study_group,
+    enrollment_date: participant.enrollment_date,
+    status: participant.status,
+    age: String(participant.age),
+    gender: participant.gender,
+  };
+}
 
 /** Today in the browser's timezone, as YYYY-MM-DD (for the date input max). */
 export function todayIsoDate(): string {

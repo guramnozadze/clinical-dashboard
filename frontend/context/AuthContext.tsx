@@ -1,13 +1,7 @@
 "use client";
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiErrorMessage, type LoginCredentials } from "@/types";
 
@@ -28,24 +22,24 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+export const sessionQueryKey = ["session"] as const;
+
+// A non-ok /api/auth/me means "not signed in", not a query error - the
+// query never rejects for that case, only for genuine network failures.
+async function fetchSession(): Promise<AuthUser | null> {
+  const response = await fetch("/api/auth/me", { cache: "no-store" });
+  return response.ok ? await response.json() : null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  const refresh = useCallback(async () => {
-    try {
-      const response = await fetch("/api/auth/me", { cache: "no-store" });
-      setUser(response.ok ? await response.json() : null);
-    } catch {
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const queryClient = useQueryClient();
+  // Session lives in the query cache (like every other server value here)
+  // instead of an effect-driven setState, so mount/refresh is just a query.
+  const session = useQuery<AuthUser | null>({
+    queryKey: sessionQueryKey,
+    queryFn: fetchSession,
+    retry: false,
+  });
 
   const login = useCallback(
     async (credentials: LoginCredentials) => {
@@ -60,25 +54,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .catch(() => ({ detail: "Login failed" }));
         throw new Error(apiErrorMessage(body));
       }
-      await refresh();
+      await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
     },
-    [refresh],
+    [queryClient],
   );
 
   const logout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" });
-    setUser(null);
-  }, []);
+    queryClient.setQueryData(sessionQueryKey, null);
+  }, [queryClient]);
 
   const value = useMemo(
     () => ({
-      user,
-      isAuthenticated: user !== null,
-      isLoading,
+      user: session.data ?? null,
+      isAuthenticated: session.data != null,
+      isLoading: session.isLoading,
       login,
       logout,
     }),
-    [user, isLoading, login, logout],
+    [session.data, session.isLoading, login, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

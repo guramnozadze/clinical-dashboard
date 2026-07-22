@@ -1,4 +1,8 @@
-import type { Participant, ParticipantCreate } from "@/types";
+import type {
+  Participant,
+  ParticipantCreate,
+  ParticipantUpdate,
+} from "@/types";
 
 import { apiFetch } from "./client";
 
@@ -18,5 +22,21 @@ export function createParticipant(
   return apiFetch<Participant>("/participants", {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+
+export function updateParticipant(
+  participantId: string,
+  data: ParticipantUpdate,
+): Promise<Participant> {
+  return apiFetch<Participant>(`/participants/${participantId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteParticipant(participantId: string): Promise<void> {
+  return apiFetch<void>(`/participants/${participantId}`, {
+    method: "DELETE",
   });
 }

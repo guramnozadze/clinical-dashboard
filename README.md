@@ -128,25 +128,25 @@ Architecture diagrams: `docs/architecture.md`. Decision records (10):
 
 Done:
 
-- Participant CRUD API (create, list with pagination, get by id) with
-  validation hardening (age bounds, subject_id format, no future enrollment
-  dates, duplicate -> 409)
+- Participant CRUD API (create, list with pagination, get by id, update,
+  soft delete) with validation hardening (age bounds, subject_id format, no
+  future enrollment dates, duplicate -> 409, subject_id immutable after
+  creation -> 422)
 - JWT auth: login endpoint, protected routers, startup-seeded user
 - Frontend: login page, edge route protection with return-to, participants
-  table (loading/error/empty/success states), add-participant form with
-  client-side validation mirroring the backend, metrics dashboard (counts by
-  study group and status) derived client-side from the shared query cache
+  table (loading/error/empty/success states) with row-level edit/delete
+  actions, add/edit participant forms with client-side validation mirroring
+  the backend, metrics dashboard (counts by study group and status) derived
+  client-side from the shared query cache
 - Error handling on both sides: consistent `{"detail": ...}` envelope,
   opaque 500s with server-side tracebacks, user-facing error states with
   retry
-- 42 tests total; Docker images for both apps (non-root, multi-stage on the
+- 58 tests total; Docker images for both apps (non-root, multi-stage on the
   frontend); compose orchestration with healthchecks
-- 10 ADRs documenting every non-trivial decision
+- 11 ADRs documenting every non-trivial decision
 
 Skipped intentionally:
 
-- **Update/delete participant** (optional in the brief): the layering makes
-  them mechanical to add.
 - **Alembic migrations**: `create_all` at startup fits a greenfield demo;
   any real deployment gets Alembic first.
 - **User registration/management**: accounts are seeded, not self-claimed;

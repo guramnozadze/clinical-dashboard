@@ -1,8 +1,8 @@
 import enum
 import uuid
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Date, Enum as SAEnum, String, Uuid
+from sqlalchemy import Date, DateTime, Enum as SAEnum, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -51,4 +51,11 @@ class Participant(Base):
     gender: Mapped[Gender] = mapped_column(
         SAEnum(Gender, name="gender", values_callable=_enum_values),
         nullable=False,
+    )
+    # Soft-delete marker (ADR 0011): deleted participants stay in the table
+    # (clinical data is never destroyed) but are invisible to the API. The
+    # unique constraint on subject_id spans deleted rows on purpose - a
+    # subject identifier is never reused within a study.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
     )

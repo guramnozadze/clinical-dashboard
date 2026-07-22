@@ -1,3 +1,9 @@
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+
+import { useDeleteParticipant } from "@/hooks/useDeleteParticipant";
 import type { Participant, ParticipantStatus, StudyGroup } from "@/types";
 
 const STATUS_STYLES: Record<ParticipantStatus, string> = {
@@ -23,6 +29,71 @@ function Badge({ label, className }: { label: string; className: string }) {
   );
 }
 
+/**
+ * Edit link + delete-with-inline-confirm for one row. Deletion asks for
+ * confirmation in place (no modal); on success the list invalidation
+ * removes the row (ADR 0010).
+ */
+function RowActions({ participant }: { participant: Participant }) {
+  const [confirming, setConfirming] = useState(false);
+  const deleteMutation = useDeleteParticipant();
+
+  if (confirming) {
+    return (
+      <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+        {deleteMutation.isError ? (
+          <span role="alert" className="text-xs text-red-600 dark:text-red-400">
+            {deleteMutation.error.message}
+          </span>
+        ) : (
+          <span className="text-xs text-zinc-500">
+            Delete {participant.subject_id}?
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => deleteMutation.mutate(participant.participant_id)}
+          disabled={deleteMutation.isPending}
+          className="rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {deleteMutation.isPending ? "Deleting…" : "Confirm"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setConfirming(false);
+            deleteMutation.reset();
+          }}
+          disabled={deleteMutation.isPending}
+          className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-end gap-3">
+      <Link
+        href={`/participants/${participant.participant_id}/edit`}
+        aria-label={`Edit ${participant.subject_id}`}
+        className="text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+      >
+        Edit
+      </Link>
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        aria-label={`Delete ${participant.subject_id}`}
+        className="text-sm font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+      >
+        Delete
+      </button>
+    </div>
+  );
+}
+
 export function ParticipantsTable({
   participants,
 }: {
@@ -39,6 +110,9 @@ export function ParticipantsTable({
             <th scope="col" className="px-4 py-3">Enrolled</th>
             <th scope="col" className="px-4 py-3">Age</th>
             <th scope="col" className="px-4 py-3">Gender</th>
+            <th scope="col" className="px-4 py-3 text-right">
+              <span className="sr-only">Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -62,6 +136,9 @@ export function ParticipantsTable({
               </td>
               <td className="px-4 py-3 tabular-nums">{participant.age}</td>
               <td className="px-4 py-3">{participant.gender}</td>
+              <td className="px-4 py-3">
+                <RowActions participant={participant} />
+              </td>
             </tr>
           ))}
         </tbody>
