@@ -4,7 +4,7 @@ from fastapi import FastAPI
 
 import app.models  # noqa: F401  # register ORM models on Base.metadata
 from app.database import Base, engine
-from app.routers import participants
+from app.routers import auth, participants
 
 
 @asynccontextmanager
@@ -20,6 +20,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(auth.router)
 app.include_router(participants.router)
 
 
