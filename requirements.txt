@@ -1,0 +1,14 @@
+fastapi==0.139.2
+uvicorn[standard]==0.51.0
+sqlalchemy==2.0.51
+psycopg2-binary==2.9.12
+pydantic==2.13.4
+pydantic-settings==2.14.2
+python-jose[cryptography]==3.5.0
+passlib[bcrypt]==1.7.4
+# passlib 1.7.4 is incompatible with bcrypt >= 4.1 (removed __about__, changed
+# long-password behavior), so bcrypt must stay pinned until passlib catches up.
+bcrypt==4.0.1
+python-multipart==0.0.32
+pytest==9.1.1
+httpx2==2.7.0
