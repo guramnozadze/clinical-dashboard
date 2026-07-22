@@ -5,6 +5,17 @@ import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/context/AuthContext";
 
+// Where to go after login: the proxy sets ?next= when it bounces a request
+// here. Only same-origin paths are honored (no open redirect). Read from
+// window.location instead of useSearchParams to avoid a Suspense boundary
+// for one parameter; this only runs in event handlers/effects, client-side.
+function postLoginDestination(): string {
+  const next = new URLSearchParams(window.location.search).get("next");
+  return next && next.startsWith("/") && !next.startsWith("//")
+    ? next
+    : "/dashboard";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { login, isAuthenticated, isLoading } = useAuth();
@@ -14,10 +25,11 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Already signed in (e.g. back-navigation to /login): skip the form.
+  // Already signed in (e.g. client-side navigation to /login): skip the
+  // form. Server-side visits are already redirected by proxy.ts.
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace("/dashboard");
+      router.replace(postLoginDestination());
     }
   }, [isLoading, isAuthenticated, router]);
 
@@ -27,7 +39,7 @@ export default function LoginPage() {
     setIsSubmitting(true);
     try {
       await login({ username, password });
-      router.replace("/dashboard");
+      router.replace(postLoginDestination());
       // isSubmitting stays true so the button doesn't flicker back to
       // "Sign in" while the redirect happens.
     } catch (err) {
