@@ -20,7 +20,7 @@ docker compose up --build
 Startup is healthcheck-gated (postgres, then API, then frontend). When all
 three are healthy:
 
-- Dashboard: http://localhost:3000 (login: `admin` / `admin-password-123`,
+- Dashboard: http://localhost:3000 (login: `admin` / `admin123`,
   seeded at startup; override via `SEED_USERNAME` / `SEED_PASSWORD`)
 - API docs (OpenAPI): http://localhost:8000/docs
 
@@ -74,7 +74,7 @@ npm test
 ```bash
 # 1. Log in (form-encoded, not JSON)
 TOKEN=$(curl -s -X POST localhost:8000/auth/login \
-  -d 'username=admin&password=admin-password-123' | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
+  -d 'username=admin&password=admin123' | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
 
 # 2. Create a participant
 curl -X POST localhost:8000/participants \

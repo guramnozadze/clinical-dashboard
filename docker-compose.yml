@@ -25,7 +25,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/clinical_trials
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
       SEED_USERNAME: ${SEED_USERNAME:-admin}
-      SEED_PASSWORD: ${SEED_PASSWORD:-admin-password-123}
+      SEED_PASSWORD: ${SEED_PASSWORD:-admin123}
     depends_on:
       db:
         condition: service_healthy

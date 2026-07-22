@@ -36,7 +36,7 @@ describe("login flow", () => {
     render(<LoginPage />, { wrapper: TestProviders });
     const user = userEvent.setup();
     await user.type(screen.getByLabelText("Username"), "admin");
-    await user.type(screen.getByLabelText("Password"), "admin-password-123");
+    await user.type(screen.getByLabelText("Password"), "admin123");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/dashboard"));
@@ -45,7 +45,7 @@ describe("login flow", () => {
       ([, init]) => init?.method === "POST",
     );
     expect(loginCall?.[1]?.body).toBe(
-      JSON.stringify({ username: "admin", password: "admin-password-123" }),
+      JSON.stringify({ username: "admin", password: "admin123" }),
     );
   });
 
