@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+    # Optional bootstrap user, created at startup when both values are set.
+    seed_username: str | None = None
+    seed_password: str | None = None
 
 
 @lru_cache

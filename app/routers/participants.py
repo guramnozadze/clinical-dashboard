@@ -1,12 +1,17 @@
 import uuid
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.crud import participant as crud
 from app.database import DbSession
 from app.schemas.participant import ParticipantCreate, ParticipantRead
+from app.security import get_current_user
 
-router = APIRouter(prefix="/participants", tags=["participants"])
+router = APIRouter(
+    prefix="/participants",
+    tags=["participants"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.post("", response_model=ParticipantRead, status_code=status.HTTP_201_CREATED)
