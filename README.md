@@ -1,7 +1,15 @@
-# Clinical Trial Data Dashboard API
+# Clinical Trial Data Dashboard
 
-FastAPI service for managing clinical trial participant data, protected by
-JWT auth, backed by PostgreSQL.
+Full stack application for managing and visualizing clinical trial
+participant data: a Next.js dashboard (client-rendered SPA) on top of a
+FastAPI + PostgreSQL backend, with JWT auth held in an httpOnly cookie.
+
+- Backend: FastAPI, SQLAlchemy 2.0, Pydantic v2, PostgreSQL, python-jose + passlib
+- Frontend: Next.js (App Router) used client-side-only, TypeScript, TanStack
+  Query, Context API for auth state, Tailwind CSS
+- Tests: pytest (backend, against real Postgres), Vitest + React Testing
+  Library (frontend)
+- Runs as three containers via docker compose
 
 ## Run it (Docker)
 
@@ -9,26 +17,59 @@ JWT auth, backed by PostgreSQL.
 docker compose up --build
 ```
 
-That is the whole setup: Postgres starts first (healthcheck-gated), the API
-waits for it, creates tables, and seeds a login (`admin` /
-`admin-password-123` by default, override via `SEED_USERNAME` /
-`SEED_PASSWORD`). The API listens on http://localhost:8000 and interactive
-docs live at http://localhost:8000/docs.
+Startup is healthcheck-gated (postgres, then API, then frontend). When all
+three are healthy:
 
-To run locally without Docker: copy `.env.example` to `.env`, point
-`DATABASE_URL` at a running Postgres, then:
+- Dashboard: http://localhost:3000 (login: `admin` / `admin-password-123`,
+  seeded at startup; override via `SEED_USERNAME` / `SEED_PASSWORD`)
+- API docs (OpenAPI): http://localhost:8000/docs
+
+The login cookie is `Secure` in the production build; browsers accept it on
+http://localhost because localhost is a trustworthy origin. Any non-localhost
+deployment needs HTTPS.
+
+## Run it (local development)
+
+Backend (needs a Postgres on localhost:5432, e.g. `docker compose up db`):
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload            # http://localhost:8000
 ```
 
-## Auth and calling a protected route
+Frontend:
 
-All `/participants` endpoints require a bearer token. Get one from
-`/auth/login` (OAuth2 password form), then pass it in the `Authorization`
-header:
+```bash
+cd frontend
+npm install
+npm run dev                              # http://localhost:3000
+```
+
+`frontend/.env.example` documents the only variable (`API_BASE_URL`,
+defaults to http://localhost:8000). Backend variables are in `.env.example`.
+
+## Tests
+
+Backend - 14 integration tests against a real Postgres (the suite creates
+its own `clinical_trials_test` database; each test runs in a rolled-back
+transaction):
+
+```bash
+source .venv/bin/activate
+pytest
+```
+
+Frontend - 28 Vitest + React Testing Library tests (login flow, route
+protection, participants list states, form validation rules, metrics
+aggregation):
+
+```bash
+cd frontend
+npm test
+```
+
+## Auth and calling a protected route (API directly)
 
 ```bash
 # 1. Log in (form-encoded, not JSON)
@@ -39,108 +80,121 @@ TOKEN=$(curl -s -X POST localhost:8000/auth/login \
 curl -X POST localhost:8000/participants \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{
-    "subject_id": "SUBJ-001",
-    "study_group": "treatment",
-    "enrollment_date": "2026-01-15",
-    "status": "active",
-    "age": 42,
-    "gender": "F"
-  }'
+  -d '{"subject_id":"SUBJ-100","study_group":"treatment","enrollment_date":"2026-01-15","status":"active","age":42,"gender":"F"}'
 
 # 3. List participants
 curl -H "Authorization: Bearer $TOKEN" localhost:8000/participants
-
-# 4. Fetch one by id (use a participant_id from the list response)
-curl -H "Authorization: Bearer $TOKEN" localhost:8000/participants/<participant_id>
 ```
 
-Without a token these return `401`. A duplicate `subject_id` returns `409`.
-Validation failures (negative age, future enrollment date, unknown enum
-values, malformed UUIDs) return `422`.
-
-## Run the tests
-
-Tests run against a real Postgres in a dedicated `clinical_trials_test`
-database that the suite creates automatically. With the compose stack (or
-any Postgres on localhost:5432) running:
-
-```bash
-source .venv/bin/activate
-pytest
-```
-
-Each test runs in a rolled-back transaction, so tests are order-independent
-and leave no residue. Point `TEST_DATABASE_URL` elsewhere if your Postgres
-is not on localhost:5432.
+Without a token these return `401`; duplicate `subject_id` returns `409`;
+validation failures return `422`. In the browser the same API is reached
+through the Next.js token-attaching proxy (see architecture below) - the
+browser never holds the JWT.
 
 ## Tech choices and why
 
-- **FastAPI + Pydantic v2**: request/response validation and OpenAPI docs
-  come from the type system; the 422 handling for bad enums/dates/UUIDs in
-  this API is entirely declarative.
-- **SQLAlchemy 2.0 (typed ORM)**: `Mapped[...]` declarations keep the DB
-  shape (`app/models`) explicit and separate from the API shape
-  (`app/schemas`).
-- **PostgreSQL**: native enum types for `study_group`/`status`/`gender`,
-  native UUID column, and the unique constraint on `subject_id` is the
-  source of truth for duplicate detection (race-free 409s).
-- **JWT bearer auth** (python-jose + passlib/bcrypt): stateless, right fit
-  for a programmatic API; see `docs/adr/0002-jwt-auth.md`.
-- **Layering**: routers own HTTP (status codes, error translation), CRUD
-  owns transactions, models own the schema. Auth is a router-level
-  dependency, applied once, not per endpoint.
+**FastAPI + Pydantic v2 + SQLAlchemy 2.0 + PostgreSQL.** Declarative
+validation and OpenAPI for free; typed ORM models; native Postgres enums and
+UUIDs, with the unique constraint on `subject_id` as the race-free source of
+truth for duplicate detection (409).
 
-Architecture decision records live in `docs/adr/`; request flow diagram in
-`docs/architecture.md`.
+**Next.js used strictly as a client-side SPA (the deliberate one).** Every
+data-bearing page is a Client Component fetching through TanStack Query,
+exactly as a Vite SPA would - no Server Components fetching from FastAPI, no
+Server Actions. FastAPI stays the single, API-centric backend; Next.js earns
+its place for two things only: routing/build tooling, and a handful of tiny
+server-side route handlers that hold the JWT in an **httpOnly cookie**
+(something a pure SPA cannot do without exposing the token to JS). Because
+browser JS cannot read that cookie, client data calls go through a ~50-line
+catch-all route handler that forwards requests to FastAPI verbatim and
+attaches the Bearer header server-side. It adds one same-host hop and zero
+business logic; in exchange the token never exists in browser-readable
+space and there is no CORS configuration anywhere. Full reasoning: ADRs
+0006, 0007, 0008.
+
+**TanStack Query for server state, Context for auth state.** Queries own
+caching/retry/invalidation (the list page and metrics dashboard share one
+cache entry); the auth context holds only "who am I" - never the token.
+
+**Testing against real infrastructure.** Backend tests hit real Postgres
+because the schema leans on Postgres behavior (enums, UUIDs, constraint
+errors); SQLite would test a different dialect. Frontend tests mock only the
+network edge (`fetch`), not the app's own modules.
+
+Architecture diagrams: `docs/architecture.md`. Decision records (10):
+`docs/adr/`.
 
 ## Done vs skipped
 
 Done:
 
-- Participant model/schemas/CRUD/routes (create, list with pagination, get
-  by id) with exact field spec
-- JWT login, protected participants router, startup seed user
-- Consistent error responses (401/404/409/422, opaque 500s with full
-  server-side tracebacks), stdout logging
-- Validation hardening (age bounds, subject_id format, no future
-  enrollment dates, bcrypt-safe password length)
-- 14 integration tests against real Postgres
-- Dockerfile (non-root) + compose with healthchecks
-- 5 ADRs documenting the non-trivial decisions
+- Participant CRUD API (create, list with pagination, get by id) with
+  validation hardening (age bounds, subject_id format, no future enrollment
+  dates, duplicate -> 409)
+- JWT auth: login endpoint, protected routers, startup-seeded user
+- Frontend: login page, edge route protection with return-to, participants
+  table (loading/error/empty/success states), add-participant form with
+  client-side validation mirroring the backend, metrics dashboard (counts by
+  study group and status) derived client-side from the shared query cache
+- Error handling on both sides: consistent `{"detail": ...}` envelope,
+  opaque 500s with server-side tracebacks, user-facing error states with
+  retry
+- 42 tests total; Docker images for both apps (non-root, multi-stage on the
+  frontend); compose orchestration with healthchecks
+- 10 ADRs documenting every non-trivial decision
 
 Skipped intentionally:
 
-- **Update/delete endpoints**: the challenge asked for create/list/get; the
-  layering makes adding them mechanical.
-- **Alembic migrations**: `create_all` at startup is enough for a single
-  fresh-start service; any real deployment gets Alembic first.
-- **User management API**: accounts are seeded, not self-registered; a
-  clinical data API should not have open registration (see ADR 0003).
-- **Refresh tokens / revocation**: 30-minute access tokens only.
+- **Update/delete participant** (optional in the brief): the layering makes
+  them mechanical to add.
+- **Alembic migrations**: `create_all` at startup fits a greenfield demo;
+  any real deployment gets Alembic first.
+- **User registration/management**: accounts are seeded, not self-claimed;
+  open registration is the wrong provisioning model for clinical data
+  (ADR 0003).
+- **Refresh tokens / revocation**: 30-minute access tokens; cookie and JWT
+  expire together.
 
 ## What I would add with more time
 
-1. Alembic migrations (first thing, before any schema change).
-2. Filtering and sorting on the list endpoint (`status=active`,
-   `study_group=treatment` are obvious dashboard needs).
-3. Roles (investigator vs admin) and per-role authorization.
-4. Refresh tokens with rotation, and rate limiting on `/auth/login`.
-5. CI pipeline: lint (ruff), tests with a Postgres service container.
-6. Aggregate endpoints for the dashboard (enrollment over time, counts by
-   group/status).
+1. Alembic migrations, before any schema change.
+2. CI pipeline: ruff + pytest with a Postgres service container; eslint +
+   tsc + vitest; docker build as the artifact.
+3. List filtering/sorting (status, study group) and server-side pagination
+   metadata; server-side aggregates once the roster outgrows client-side
+   computation.
+4. Roles (investigator vs admin) and per-role authorization.
+5. Refresh-token rotation and rate limiting on `/auth/login`.
+6. Participant detail/edit views; OpenAPI-generated TS client to eliminate
+   hand-maintained type mirroring.
+7. Observability: structured logging, request IDs across the proxy hop,
+   health/metrics endpoints wired to something like Prometheus.
 
 ## Trade-offs made
 
-- **python-jose over PyJWT**: per the agreed stack; it is effectively
-  unmaintained, so the swap (one file, `app/security.py`) is noted as
-  future work.
+- **python-jose over PyJWT**: works, but effectively unmaintained; isolated
+  to `app/security.py` so the swap is one file.
 - **passlib pins bcrypt to 4.0.1**: passlib 1.7.4 breaks with bcrypt >= 4.1;
-  the pin is documented in `requirements.txt`.
-- **DB lookup on every authenticated request**: `get_current_user` hits the
-  DB so deleted users are locked out instantly; costs one indexed query per
-  request.
+  documented in `requirements.txt`.
+- **One extra hop for browser data calls** (the token-attaching proxy):
+  milliseconds of latency purchased the token never being JS-readable.
+- **`/api/auth/me` decodes the JWT without verifying**: it only informs the
+  UI; FastAPI verifies every real data request. Verification in Next would
+  require sharing the signing secret across services.
+- **Client-side metrics aggregation**: right at this scale, wrong at 10k+
+  rows; the swap to a server aggregate endpoint is contained in one hook.
 - **`create_all` instead of migrations**: zero-friction startup now, a
   schema-evolution cliff later; acceptable only because this is greenfield.
-- **Seeded credentials in compose defaults**: convenient for reviewers,
-  never acceptable in production; unsetting the variables disables seeding.
+- **Seeded demo credentials in compose defaults**: reviewer convenience,
+  never production practice; unsetting the variables disables seeding.
+
+## AI tools used
+
+Built with Claude Code (Anthropic), used heavily and deliberately. The
+workflow: I specified the architecture up front (stack, folder layout,
+client-side-only Next.js constraint, the step plan) and the agent executed
+one reviewable step at a time - each step E2E-verified (real Postgres, real
+browser via Playwright, containerized runs) before its commit, with my
+review gate between steps. The ADRs in `docs/adr/` record the decisions and
+the alternatives weighed at each fork. I can walk through and defend any
+part of the codebase.

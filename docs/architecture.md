@@ -1,35 +1,60 @@
 # Architecture
 
-## Request flow
+Two applications, one API contract. FastAPI is the single backend; the
+Next.js app is a client-rendered SPA whose only server-side code handles the
+auth cookie and forwards data requests (ADRs 0006-0008).
+
+## Full request flow
 
 ```mermaid
 flowchart TD
-    C[Client] -->|"Bearer token (except /auth/login, /health)"| R
+    B[Browser<br/>React client components] -->|"1. page navigation"| PX[proxy.ts - edge<br/>cookie presence check,<br/>redirects to /login]
+    B -->|"2. login JSON"| LH["/api/auth/login route handler"]
+    LH -->|form-encoded credentials| FA
+    LH -->|"Set-Cookie: access_token<br/>(httpOnly, Secure, SameSite=Lax)"| B
+    B -->|"3. TanStack Query fetch<br/>/api/backend/participants<br/>(cookie rides along)"| PR["/api/backend/[...path]<br/>token-attaching proxy"]
+    PR -->|"Authorization: Bearer &lt;jwt&gt;<br/>forwarded verbatim"| FA
 
-    subgraph FastAPI app
-        R[Router layer<br/>app/routers/participants.py, auth.py]
-        A[get_current_user<br/>app/security.py]
-        S[Pydantic schemas<br/>app/schemas/*]
-        CR[CRUD layer<br/>app/crud/*]
-        D[get_db dependency<br/>app/database.py]
-        E[Global exception handler<br/>app/main.py]
+    subgraph FastAPI backend
+        FA[Routers<br/>participants, auth] --> DEP[get_current_user<br/>JWT verification]
+        FA --> S[Pydantic schemas<br/>validation]
+        FA --> CR[CRUD layer<br/>transactions]
+        CR --> DB[(PostgreSQL<br/>participants, users)]
+        EH[Global exception handler<br/>opaque 500 + logged traceback] -.-> FA
     end
 
-    R --> A
-    A -->|decode JWT, load user| CR
-    R -->|validate request body| S
-    R --> CR
-    D -->|Session per request| CR
-    CR -->|SQLAlchemy ORM| P[(PostgreSQL<br/>participants, users)]
-    CR -->|ORM objects| R
-    R -->|response_model serialization| S
-    S --> C
-
-    R -.->|"expected errors: HTTPException (401/404/409)"| C
-    E -.->|"unexpected errors: logged traceback, opaque 500"| C
+    PR -->|response streamed back untouched| B
 ```
 
-## Layer responsibilities
+Key properties:
+
+- The JWT never exists in browser-readable space: it is set as an httpOnly
+  cookie by the login route handler and attached as a Bearer header by the
+  server-side proxy. `document.cookie` shows nothing.
+- The proxy forwards verbatim (method, path, query, body, status, error
+  bodies). FastAPI's contract is the only API contract; there is no second
+  backend and no CORS anywhere (all browser requests are same-origin).
+- Route protection is layered: `proxy.ts` redirects for UX (cookie presence
+  only), while FastAPI's signature verification is the actual security
+  boundary. A forged cookie gets a page shell but no data.
+- `/api/auth/me` decodes (does not verify) the JWT to tell the UI who is
+  logged in; it is advisory, never an authorization boundary.
+
+## Frontend layers
+
+| Layer | Location | Owns |
+|---|---|---|
+| Pages | `frontend/app/*/page.tsx` | Client Components; state branching (loading/error/empty/data) |
+| Route handlers | `frontend/app/api/` | Auth cookie (login/logout/me) + the data proxy; the only server-side code |
+| Edge proxy | `frontend/proxy.ts` | Redirect-level route protection (Next 16 name for middleware) |
+| Components | `frontend/components/` | Presentational: table, form, tiles, bars, states |
+| Hooks | `frontend/hooks/` | TanStack Query hooks (`useParticipants`, `useCreateParticipant`) |
+| Context | `frontend/context/` | Auth status + username; never the token |
+| API client | `frontend/lib/api/` | Typed fetch wrapper + per-resource functions; 401 -> re-login |
+| Domain logic | `frontend/lib/` | Pure, unit-tested: form validation mirror, metrics aggregation |
+| Types | `frontend/types/` | TS mirrors of the Pydantic schemas + shared enum arrays |
+
+## Backend layers
 
 | Layer | Location | Owns |
 |---|---|---|
@@ -40,17 +65,14 @@ flowchart TD
 | Security | `app/security.py` | Hashing, JWT issue/verify, `get_current_user` |
 | Config | `app/config.py` | Environment-driven settings (pydantic-settings) |
 
-Key mechanics:
+Mechanics: sessions are per-request via the `DbSession` dependency with
+explicit commits in CRUD (ADR 0001); startup runs `create_all` plus an
+idempotent seed user (ADR 0003); expected errors raise `HTTPException`,
+everything else hits the catch-all handler (ADR 0004).
 
-- **Auth** is a router-level dependency on the participants router; every
-  route under it requires a valid JWT, and `/auth/login` + `/health` stay
-  public.
-- **Sessions** are per-request via `get_db`, exposed to endpoints as the
-  `DbSession` annotated type. CRUD functions commit explicitly.
-- **Startup** (lifespan): `create_all` for tables, then idempotent seed of
-  the configured bootstrap user.
-- **Errors**: routers raise `HTTPException` for expected cases; anything
-  else hits the catch-all handler, which logs the traceback and returns
-  `{"detail": "Internal server error"}`.
+## Decision records
 
-Decision records: see `docs/adr/`.
+`docs/adr/` - 0001 session handling, 0002 JWT auth, 0003 seed user,
+0004 error handling, 0005 test database, 0006 Next.js as client-side SPA,
+0007 httpOnly cookie, 0008 token-attaching proxy, 0009 form validation,
+0010 invalidation over optimistic updates.
